@@ -21,6 +21,11 @@
     <binary>messenger</binary>
   </provides>
   <releases>
+    <release version="1.1.2" date="2026-08-17">
+      <description>
+        <p>Fix reCAPTCHA and security verification dialog rendering by isolating custom styles and scripts strictly to the top frame.</p>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-08-17">
       <description>
         <p>Suppress notifications for self-sent outgoing messages and lock chat extraction strictly to the active top conversation.</p>
