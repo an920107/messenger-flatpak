@@ -95,11 +95,18 @@ fn build_ui(app: &Application) {
 
     let app_notify = app.clone();
     content_manager.connect_script_message_received(Some("notify"), move |_, value| {
-        let msg = value.to_str();
-        println!(">>> [Direct IPC Notification Received from JS] {}", msg);
+        let raw = value.to_str();
+        let mut parts = raw.splitn(2, '\n');
+        let sender = parts.next().unwrap_or("Messenger").trim();
+        let body = parts.next().unwrap_or("").trim();
 
-        let g_notif = gtk4::gio::Notification::new("Messenger");
-        g_notif.set_body(Some(&msg));
+        let title = if sender.is_empty() { "Messenger" } else { sender };
+        println!(">>> [Messenger Native Notification] Sender: {}, Body: {}", title, body);
+
+        let g_notif = gtk4::gio::Notification::new(title);
+        if !body.is_empty() {
+            g_notif.set_body(Some(body));
+        }
         g_notif.set_default_action("app.activate");
         app_notify.send_notification(None, &g_notif);
     });

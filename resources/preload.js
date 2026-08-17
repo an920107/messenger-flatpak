@@ -1,25 +1,27 @@
 // ==========================================================================
-// Messenger Preload Script - Background Keep-Alive & Direct IPC Notifications
+// Messenger Preload Script - Background Keep-Alive & Direct Native Notifications
 // ==========================================================================
 
 (function () {
     'use strict';
 
-    console.log('[Messenger Preload] Initializing background keep-alive and direct IPC notifications...');
+    console.log('[Messenger Preload] Initializing Messenger direct notification passthrough...');
 
-    // 0. 直通 Rust 的原生通知發送器
-    function sendNativeNotification(text) {
-        console.log('[Messenger Preload] Dispatching native notification via WebKit IPC:', text);
+    // 0. 直通發送至 Rust 的原生通知函式
+    function postToRust(sender, body) {
+        const title = (sender || 'Messenger').trim();
+        const content = (body || '').trim();
+        console.log('[Messenger Direct Notify]', { sender: title, body: content });
         try {
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.notify) {
-                window.webkit.messageHandlers.notify.postMessage(text);
+                window.webkit.messageHandlers.notify.postMessage(`${title}\n${content}`);
             }
-        } catch (err) {
-            console.error('[Preload] PostMessage IPC error:', err);
+        } catch (e) {
+            console.error('[Messenger Preload] IPC Error:', e);
         }
     }
 
-    // 1. 偽裝 Visibility API，防止 WebKit 在視窗隱藏或最小化時掛起 WebSocket / MQTT 即時通訊通道
+    // 1. 偽裝 Visibility API，防止 WebKit 在視窗隱藏或最小化時掛起 WebSocket / MQTT 即時連線
     try {
         Object.defineProperty(document, 'hidden', {
             get: () => false,
@@ -34,17 +36,11 @@
         console.error('[Preload] Visibility hook error:', err);
     }
 
-    // 2. 攔截 Web Notification API，將所有通知直接轉發給 Rust
+    // 2. 100% 直通 Messenger 呼叫的 window.Notification（寄件者與訊息內文）
     try {
-        const OriginalNotification = window.Notification;
-        window.Notification = function (title, options) {
-            const body = (options && options.body) || title || '您收到了一則新訊息';
-            sendNativeNotification(body);
-            if (OriginalNotification) {
-                try {
-                    return new OriginalNotification(title, options);
-                } catch (e) {}
-            }
+        window.Notification = function (sender, options) {
+            const body = (options && options.body) || '';
+            postToRust(sender, body);
             return {};
         };
         window.Notification.permission = 'granted';
@@ -53,53 +49,18 @@
         console.error('[Preload] Notification hook error:', err);
     }
 
-    // 3. 攔截 document.title 變化（未讀訊息標題變更雙重保障）
-    let lastKnownTitle = document.title;
-
-    function handleTitleChange(newTitle) {
-        if (!newTitle || newTitle === lastKnownTitle) return;
-        lastKnownTitle = newTitle;
-
-        console.log('[Messenger Preload] Title changed to:', newTitle);
-
-        // 匹配 Facebook Messenger 標題通知格式：
-        // 例如 "(1) Messenger"、"(2) 小明 傳送了一則訊息"、"小明 傳送了一則訊息"
-        if (/^\(\d+\)/.test(newTitle) || /傳送了一則訊息|sent a message|說：|said:/i.test(newTitle)) {
-            console.log('[Messenger Preload] Unread message detected from title! Sending native notification...');
-            const cleanBody = newTitle.replace(/^\(\d+\)\s*/, '');
-            sendNativeNotification(cleanBody || '您收到了一則新訊息');
-        }
-    }
-
-    // 攔截 document.title Setter
+    // 3. 100% 直通 ServiceWorkerRegistration.prototype.showNotification（網頁背景推送）
     try {
-        const titleDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'title') ||
-                                Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'title');
-        if (titleDescriptor && titleDescriptor.set) {
-            Object.defineProperty(document, 'title', {
-                get() {
-                    return titleDescriptor.get.call(document);
-                },
-                set(val) {
-                    handleTitleChange(val);
-                    return titleDescriptor.set.call(document, val);
-                },
-                configurable: true
-            });
+        if (typeof ServiceWorkerRegistration !== 'undefined' && ServiceWorkerRegistration.prototype) {
+            ServiceWorkerRegistration.prototype.showNotification = function (sender, options) {
+                const body = (options && options.body) || '';
+                postToRust(sender, body);
+                return Promise.resolve();
+            };
         }
     } catch (err) {
-        console.error('[Preload] Title setter hook error:', err);
+        console.error('[Preload] ServiceWorker hook error:', err);
     }
 
-    // 輪詢定時器備援檢查
-    setInterval(() => {
-        handleTitleChange(document.title);
-    }, 1000);
-
-    // 4. 網頁載入 3 秒後發送一條啟動通知確認通道暢通
-    setTimeout(() => {
-        console.log('[Messenger Preload] Ready.');
-    }, 3000);
-
-    console.log('[Messenger Preload] Direct IPC bridge registered successfully.');
+    console.log('[Messenger Preload] Direct notification passthrough registered successfully.');
 })();
