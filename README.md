@@ -14,13 +14,30 @@ A native GTK4 / Libadwaita desktop client for Facebook Messenger on Linux.
 
 ## Installation
 
-Install the standalone `.flatpak` bundle:
+### Online Install (Recommended)
+
+Install directly with automatic online updates via Flatpak Ref:
+
+```bash
+flatpak install --user https://flatpak.squidspirit.com/apps/messenger.flatpakref
+```
+
+Or subscribe to the SquidSpirit repository:
+
+```bash
+flatpak remote-add --user --if-not-exists squidspirit https://flatpak.squidspirit.com/squidspirit.flatpakrepo
+flatpak install --user squidspirit com.squidspirit.Messenger
+```
+
+### Standalone Bundle
+
+Download and install the standalone `.flatpak` bundle from [Releases](https://github.com/an920107/messenger-flatpak/releases):
 
 ```bash
 flatpak install --user Messenger.flatpak
 ```
 
-Run the application:
+### Run
 
 ```bash
 flatpak run com.squidspirit.Messenger
