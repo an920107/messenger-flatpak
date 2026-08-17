@@ -111,10 +111,11 @@ fn build_ui(app: &Application) {
     let app_clone = app.clone();
     web_view.connect_show_notification(move |_, notif| {
         let title = notif.title().unwrap_or_else(|| glib::GString::from("Messenger"));
+        let body = notif.body().unwrap_or_else(|| glib::GString::from("您收到了一則新訊息"));
+        println!(">>> [Messenger Notification Event] Title: {}, Body: {}", title, body);
+
         let g_notif = gtk4::gio::Notification::new(&title);
-        if let Some(body) = notif.body() {
-            g_notif.set_body(Some(&body));
-        }
+        g_notif.set_body(Some(&body));
         g_notif.set_default_action("app.activate");
         let notif_id = format!("msg-{}", notif.id());
         app_clone.send_notification(Some(&notif_id), &g_notif);
