@@ -71,7 +71,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git fetch --tags --force
-          TAG_NOTE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
+          
+          # Extract subject and body without PGP signature block
+          TAG_NOTE=$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "${{ github.ref_name }}")
           
           if [ -n "$TAG_NOTE" ]; then
             echo "$TAG_NOTE" > release_notes.md
@@ -79,6 +81,12 @@ jobs:
             gh api "repos/${{ github.repository }}/git/ref/tags/${{ github.ref_name }}" --jq .object.sha | \
               xargs -I {} gh api "repos/${{ github.repository }}/git/tags/{}" --jq .message > release_notes.md 2>/dev/null || true
           fi
+          
+          # Strip any PGP ASCII armor block if present
+          sed -i '/-----BEGIN PGP SIGNATURE-----/,/-----END PGP SIGNATURE-----/d' release_notes.md
+          
+          # Strip trailing empty lines
+          sed -i -e :a -e '/^\n*$/{$d;N;};/\n$/ba' release_notes.md 2>/dev/null || true
           
           echo "=== Release Notes Content ==="
           cat release_notes.md
