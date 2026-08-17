@@ -10,7 +10,9 @@
       A fast, lightweight, native GTK4 and Libadwaita desktop client for Facebook Messenger with seamless GNOME 50 desktop integration, persistent session cookies, and background execution.
     </p>
   </description>
-  <developer_name>Squidspirit</developer_name>
+  <developer id="com.squidspirit">
+    <name>SquidSpirit</name>
+  </developer>
   <url type="homepage">https://www.facebook.com/messages</url>
   <launchable type="desktop-id">com.squidspirit.Messenger.desktop</launchable>
   <provides>
@@ -23,5 +25,11 @@
       </description>
     </release>
   </releases>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Messenger Main Window</caption>
+      <image>https://media.githubusercontent.com/media/an920107/messenger-flatpak/main/resources/screenshot.png</image>
+    </screenshot>
+  </screenshots>
   <content_rating type="oars-1.1" />
 </component>
