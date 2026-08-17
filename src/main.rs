@@ -4,13 +4,15 @@ use libadwaita::{Application, ApplicationWindow, HeaderBar, WindowTitle};
 use webkit6::prelude::*;
 use webkit6::{
     CookieAcceptPolicy, CookiePersistentStorage, NetworkSession, PermissionRequest, Settings,
-    UserContentInjectedFrames, UserContentManager, UserStyleLevel, UserStyleSheet, WebView,
+    UserContentInjectedFrames, UserContentManager, UserScript, UserScriptInjectionTime,
+    UserStyleLevel, UserStyleSheet, WebView,
 };
 
 const APP_ID: &str = "com.squidspirit.Messenger";
 const TARGET_URL: &str = "https://www.facebook.com/messages";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 const HIDE_NAV_CSS: &str = include_str!("../resources/hide-nav.css");
+const PRELOAD_JS: &str = include_str!("../resources/preload.js");
 
 fn main() -> glib::ExitCode {
     let app = Application::builder()
@@ -68,7 +70,7 @@ fn build_ui(app: &Application) {
         .user_agent(USER_AGENT)
         .build();
 
-    // 3. WebKit User Content Manager - 注入 CSS
+    // 3. WebKit User Content Manager - 注入 CSS 與 JavaScript 保活腳本
     let content_manager = UserContentManager::new();
     let stylesheet = UserStyleSheet::new(
         HIDE_NAV_CSS,
@@ -78,6 +80,15 @@ fn build_ui(app: &Application) {
         &[],
     );
     content_manager.add_style_sheet(&stylesheet);
+
+    let script = UserScript::new(
+        PRELOAD_JS,
+        UserContentInjectedFrames::AllFrames,
+        UserScriptInjectionTime::Start,
+        &[],
+        &[],
+    );
+    content_manager.add_script(&script);
 
     // 4. Web View
     let web_view = WebView::builder()
@@ -93,6 +104,20 @@ fn build_ui(app: &Application) {
     // 自動允許桌面通知與多媒體音訊權限
     web_view.connect_permission_request(|_, req: &PermissionRequest| {
         req.allow();
+        true
+    });
+
+    // 攔截 WebKit 通知事件，使用 Libadwaita / GIO 原生桌面通知 Portal 發送通知
+    let app_clone = app.clone();
+    web_view.connect_show_notification(move |_, notif| {
+        let title = notif.title().unwrap_or_else(|| glib::GString::from("Messenger"));
+        let g_notif = gtk4::gio::Notification::new(&title);
+        if let Some(body) = notif.body() {
+            g_notif.set_body(Some(&body));
+        }
+        g_notif.set_default_action("app.activate");
+        let notif_id = format!("msg-{}", notif.id());
+        app_clone.send_notification(Some(&notif_id), &g_notif);
         true
     });
 
