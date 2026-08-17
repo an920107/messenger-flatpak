@@ -43,68 +43,71 @@
     // 從 Messenger 對話列表中精確抓取最新對話的寄件者、乾淨內文與頭像
     function extractLatestChatFromDOM() {
         try {
-            // 專屬選取 Messenger 真實對話連結（完全排除 Facebook 一般通知或社團提醒）
+            // 專屬選取 Messenger 真實對話連結（頂部第一條即為最新活躍對話）
             const rows = document.querySelectorAll(
                 'a[role="link"][href*="/messages/t/"], a[role="link"][href*="/messages/e2ee/t/"], a[href*="/messages/t/"], a[href*="/messages/e2ee/t/"]'
             );
 
-            for (const row of rows) {
-                // 1. 抓取頭像 URL（支援 svg image xlink:href, href 與 img src）
-                let avatarUrl = '';
-                const imageEl = row.querySelector('image') || row.querySelector('img');
-                if (imageEl) {
-                    avatarUrl = imageEl.getAttribute('xlink:href') || imageEl.getAttribute('href') || imageEl.src || '';
+            if (!rows || rows.length === 0) return null;
+            const topRow = rows[0];
+
+            // 1. 抓取頭像 URL（支援 svg image xlink:href, href 與 img src）
+            let avatarUrl = '';
+            const imageEl = topRow.querySelector('image') || topRow.querySelector('img');
+            if (imageEl) {
+                avatarUrl = imageEl.getAttribute('xlink:href') || imageEl.getAttribute('href') || imageEl.src || '';
+            }
+
+            // 2. 提取 span[dir="auto"] 文字節點
+            const textSpans = Array.from(topRow.querySelectorAll('span[dir="auto"]'))
+                .map(s => s.innerText.trim())
+                .filter(Boolean);
+
+            if (textSpans.length === 0) return null;
+
+            // 寄件者通常是第一個 span[dir="auto"]（或 <b> 標籤）
+            const bEl = topRow.querySelector('b');
+            let sender = (bEl && bEl.innerText) ? bEl.innerText.trim() : textSpans[0];
+
+            // 訊息內容通常在第二個 span[dir="auto"]
+            let rawBody = textSpans.length > 1 ? textSpans[1] : '';
+
+            // 備援：若無第二個 span，檢查子文字
+            if (!rawBody) {
+                const rawLines = (topRow.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+                if (rawLines.length > 1) {
+                    rawBody = rawLines[1];
                 }
+            }
 
-                // 2. 提取 span[dir="auto"] 文字節點
-                const textSpans = Array.from(row.querySelectorAll('span[dir="auto"]'))
-                    .map(s => s.innerText.trim())
-                    .filter(Boolean);
+            // 清理訊息內容
+            let body = rawBody;
+            // 去除無障礙標籤
+            body = body.replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '').trim();
+            // 去除時間後綴（如 " · 1 分鐘"、" • 剛剛"）
+            body = body.replace(/\s*[·•・\-]\s*.*$/, '').trim();
+            // 去除外圍引號與句號
+            body = body.replace(/^["'“”„‟’‘\s]+|["'“”„‟’‘\s。]+$/g, '').trim();
 
-                if (textSpans.length === 0) continue;
+            // 如果頂部最新訊息是自己發送的（以「你:」、「你傳送了」、「You:」開頭），更新 key 並立即終止，不觸發通知亦不向後尋找舊訊息
+            const isSentByMe = /^(你|You)[：:\s]|^(你|You)(傳送了|分享了|收回了|回應了|表示|sent|shared|reacted|replied)/i.test(body);
+            if (isSentByMe) {
+                lastSeenMessageKey = `${sender}:::${body}`;
+                return null;
+            }
 
-                // 寄件者通常是第一個 span[dir="auto"]（或 <b> 標籤）
-                const bEl = row.querySelector('b');
-                let sender = (bEl && bEl.innerText) ? bEl.innerText.trim() : textSpans[0];
+            // 如果開頭包含寄件者姓名（如「小明:」），去除前綴
+            if (sender) {
+                body = body.replace(new RegExp('^' + sender + '[：:]\\s*', 'i'), '').trim();
+            }
 
-                // 訊息內容通常在第二個 span[dir="auto"]
-                let rawBody = textSpans.length > 1 ? textSpans[1] : '';
-
-                // 備援：若無第二個 span，檢查子文字
-                if (!rawBody) {
-                    const rawLines = (row.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
-                    if (rawLines.length > 1) {
-                        rawBody = rawLines[1];
-                    }
-                }
-
-                // 清理訊息內容
-                let body = rawBody;
-                // 去除無障礙標籤
-                body = body.replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '').trim();
-                // 去除時間後綴（如 " · 1 分鐘"、" • 剛剛"）
-                body = body.replace(/\s*[·•・\-]\s*.*$/, '').trim();
-                // 去除外圍引號與句號
-                body = body.replace(/^["'“”„‟’‘\s]+|["'“”„‟’‘\s。]+$/g, '').trim();
-
-                // 如果這則訊息是自己傳送的（以「你:」或「You:」開頭），則不觸發通知
-                if (/^(你|You)[：:]/i.test(body)) {
-                    continue;
-                }
-
-                // 如果開頭包含寄件者姓名（如「小明:」），去除前綴
-                if (sender) {
-                    body = body.replace(new RegExp('^' + sender + '[：:]\\s*', 'i'), '').trim();
-                }
-
-                const ignored = ['Messenger', '搜尋', 'Search', 'Chats', '對話', '收件匣', 'Inbox', '訊息', 'Messages', '隱藏的聊天室'];
-                if (sender && !ignored.includes(sender) && !sender.startsWith('http')) {
-                    return {
-                        sender: sender,
-                        body: body || '您收到了一則新訊息',
-                        avatarUrl: avatarUrl
-                    };
-                }
+            const ignored = ['Messenger', '搜尋', 'Search', 'Chats', '對話', '收件匣', 'Inbox', '訊息', 'Messages', '隱藏的聊天室'];
+            if (sender && !ignored.includes(sender) && !sender.startsWith('http')) {
+                return {
+                    sender: sender,
+                    body: body || '您收到了一則新訊息',
+                    avatarUrl: avatarUrl
+                };
             }
         } catch (e) {
             console.error('[Messenger Preload] DOM extract error:', e);
