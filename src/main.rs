@@ -24,7 +24,8 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_ui(app: &Application) {
-    if let Some(window) = app.active_window() {
+    if let Some(window) = app.windows().first() {
+        window.set_visible(true);
         window.present();
         return;
     }
@@ -94,11 +95,13 @@ fn build_ui(app: &Application) {
     content_manager.register_script_message_handler("notify", None);
 
     let app_notify = app.clone();
+    let cache_dir_clone = cache_dir.clone();
     content_manager.connect_script_message_received(Some("notify"), move |_, value| {
         let raw = value.to_str();
-        let mut parts = raw.splitn(2, '\n');
+        let mut parts = raw.splitn(3, '\n');
         let sender = parts.next().unwrap_or("Messenger").trim();
         let body = parts.next().unwrap_or("").trim();
+        let avatar_b64 = parts.next().unwrap_or("").trim();
 
         let title = if sender.is_empty() { "Messenger" } else { sender };
         println!(">>> [Messenger Native Notification] Sender: {}, Body: {}", title, body);
@@ -108,6 +111,20 @@ fn build_ui(app: &Application) {
             g_notif.set_body(Some(body));
         }
         g_notif.set_default_action("app.activate");
+
+        // 若有寄件者頭像 Base64，存入快取並設置為通知圖示
+        if !avatar_b64.is_empty() {
+            let bytes = glib::base64_decode(avatar_b64);
+            if !bytes.is_empty() {
+                let avatar_file = cache_dir_clone.join("current_avatar.png");
+                if std::fs::write(&avatar_file, bytes).is_ok() {
+                    let g_file = gtk4::gio::File::for_path(&avatar_file);
+                    let icon = gtk4::gio::FileIcon::new(&g_file);
+                    g_notif.set_icon(&icon);
+                }
+            }
+        }
+
         app_notify.send_notification(None, &g_notif);
     });
 
