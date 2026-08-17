@@ -18,6 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           lfs: true
 
       - name: Cache Flatpak SDK & Runtimes
@@ -65,12 +66,26 @@ jobs:
           name: Messenger-${{ github.ref_name }}
           path: Messenger-${{ github.ref_name }}.flatpak
 
-      - name: Publish GitHub Release
+      - name: Extract Tag Notes & Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          git fetch --tags --force
+          TAG_NOTE=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
+          
+          if [ -n "$TAG_NOTE" ]; then
+            echo "$TAG_NOTE" > release_notes.md
+          else
+            gh api "repos/${{ github.repository }}/git/ref/tags/${{ github.ref_name }}" --jq .object.sha | \
+              xargs -I {} gh api "repos/${{ github.repository }}/git/tags/{}" --jq .message > release_notes.md 2>/dev/null || true
+          fi
+          
+          echo "=== Release Notes Content ==="
+          cat release_notes.md
+          echo "============================="
+          
           gh release delete "${{ github.ref_name }}" -y 2>/dev/null || true
           gh release create "${{ github.ref_name }}" \
             "Messenger-${{ github.ref_name }}.flatpak" \
             --title "${{ github.ref_name }}" \
-            --notes-from-tag
+            --notes-file release_notes.md
