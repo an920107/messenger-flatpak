@@ -71,11 +71,11 @@ fn build_ui(app: &Application) {
         .user_agent(USER_AGENT)
         .build();
 
-    // 3. WebKit User Content Manager - 注入 CSS 與 JavaScript 保活腳本
+    // 3. WebKit User Content Manager - 注入 CSS 與 JavaScript 保活腳本 (僅注入頂層框架，絕不干擾 reCAPTCHA 等 iframe)
     let content_manager = UserContentManager::new();
     let stylesheet = UserStyleSheet::new(
         HIDE_NAV_CSS,
-        UserContentInjectedFrames::AllFrames,
+        UserContentInjectedFrames::TopFrame,
         UserStyleLevel::User,
         &[],
         &[],
@@ -84,7 +84,7 @@ fn build_ui(app: &Application) {
 
     let script = UserScript::new(
         PRELOAD_JS,
-        UserContentInjectedFrames::AllFrames,
+        UserContentInjectedFrames::TopFrame,
         UserScriptInjectionTime::Start,
         &[],
         &[],
