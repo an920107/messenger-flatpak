@@ -48,20 +48,13 @@ jobs:
           path: Messenger-${{ github.ref_name }}.flatpak
 
       - name: Extract Tag Message
-        id: tag_message
         run: |
-          TAG_MSG=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
-          {
-            echo 'body<<EOF'
-            echo "$TAG_MSG"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+          git tag -l --format='%(contents)' "${{ github.ref_name }}" > release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          body: ${{ steps.tag_message.outputs.body }}
+          body_path: release_notes.md
           files: Messenger-${{ github.ref_name }}.flatpak
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
