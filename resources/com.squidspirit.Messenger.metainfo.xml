@@ -21,9 +21,9 @@
     <binary>messenger</binary>
   </provides>
   <releases>
-    <release version="1.1.2" date="2026-08-17">
+    <release version="1.1.2" date="2026-08-18">
       <description>
-        <p>Fix reCAPTCHA and security verification dialog rendering by isolating custom styles and scripts strictly to the top frame.</p>
+        <p>Fix reCAPTCHA and security verification dialog rendering by isolating custom styles strictly to the top frame, and extend the main chat layout to 100vh to eliminate bottom blank margins.</p>
       </description>
     </release>
     <release version="1.1.1" date="2026-08-17">
