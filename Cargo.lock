@@ -472,6 +472,7 @@ version = "1.0.1"
 dependencies = [
  "gtk4",
  "libadwaita",
+ "soup3",
  "webkit6",
 ]
 

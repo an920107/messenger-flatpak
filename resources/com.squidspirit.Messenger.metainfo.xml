@@ -21,6 +21,11 @@
     <binary>messenger</binary>
   </provides>
   <releases>
+    <release version="1.1.0" date="2026-08-17">
+      <description>
+        <p>Add rich native desktop notifications with sender avatar icons, clean message content extraction, click-to-activate window focus, background keep-alive, and consecutive message notifications.</p>
+      </description>
+    </release>
     <release version="1.0.1" date="2026-08-17">
       <description>
         <p>Fix session logout issue by enabling persistent SQLite cookie storage and LocalStorage across restarts.</p>
