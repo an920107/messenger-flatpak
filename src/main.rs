@@ -95,7 +95,7 @@ fn build_ui(app: &Application) {
     content_manager.register_script_message_handler("notify", None);
 
     let app_notify = app.clone();
-    let cache_dir_clone = cache_dir.clone();
+    let http_session = soup::Session::new();
     content_manager.connect_script_message_received(Some("notify"), move |_, value| {
         let raw = value.to_str();
         let mut parts = raw.splitn(3, '\n');
@@ -104,7 +104,7 @@ fn build_ui(app: &Application) {
         let avatar_url = parts.next().unwrap_or("").trim();
 
         let title = if sender.is_empty() { "Messenger" } else { sender };
-        println!(">>> [Messenger Native Notification] Sender: {}, Body: {}", title, body);
+        println!(">>> [Messenger Native Notification] Sender: {}, Body: {}, Avatar URL: {}", title, body, avatar_url);
 
         let g_notif = gtk4::gio::Notification::new(title);
         if !body.is_empty() {
@@ -112,27 +112,16 @@ fn build_ui(app: &Application) {
         }
         g_notif.set_default_action("app.open-window");
 
-        // 若有寄件者頭像 URL 或 Base64，存入快取並設置為通知圖示
-        if !avatar_url.is_empty() {
-            if avatar_url.starts_with("http") {
-                let g_file_uri = gtk4::gio::File::for_uri(avatar_url);
-                if let Ok((bytes, _)) = g_file_uri.load_bytes(gtk4::gio::Cancellable::NONE) {
-                    let avatar_file = cache_dir_clone.join("current_avatar.png");
-                    if std::fs::write(&avatar_file, bytes).is_ok() {
-                        let g_file = gtk4::gio::File::for_path(&avatar_file);
-                        let icon = gtk4::gio::FileIcon::new(&g_file);
-                        g_notif.set_icon(&icon);
-                    }
-                }
-            } else {
-                let bytes = glib::base64_decode(avatar_url);
-                if !bytes.is_empty() {
-                    let avatar_file = cache_dir_clone.join("current_avatar.png");
-                    if std::fs::write(&avatar_file, bytes).is_ok() {
-                        let g_file = gtk4::gio::File::for_path(&avatar_file);
-                        let icon = gtk4::gio::FileIcon::new(&g_file);
-                        g_notif.set_icon(&icon);
-                    }
+        // 若有寄件者頭像 URL，透過 Soup3 下載並封裝為 BytesIcon 傳入 D-Bus 通知
+        if !avatar_url.is_empty() && avatar_url.starts_with("http") {
+            if let Ok(msg) = soup::Message::new("GET", avatar_url) {
+                if let Ok(bytes) = http_session.send_and_read(&msg, gtk4::gio::Cancellable::NONE) {
+                    println!(">>> [Avatar Downloaded] Successfully fetched {} bytes", bytes.len());
+                    let g_bytes = glib::Bytes::from_owned(bytes);
+                    let icon = gtk4::gio::BytesIcon::new(&g_bytes);
+                    g_notif.set_icon(&icon);
+                } else {
+                    println!(">>> [Avatar Download] Failed to fetch avatar bytes from {}", avatar_url);
                 }
             }
         }

@@ -5,7 +5,7 @@
 (function () {
     'use strict';
 
-    console.log('[Messenger Preload] Initializing rich notification engine with avatar & clean body...');
+    console.log('[Messenger Preload] Initializing rich notification engine with Soup3 avatar & clean body...');
 
     let isReady = false;
     let lastUnreadCount = 0;
@@ -47,31 +47,6 @@
         }
     }
 
-    // 深度過濾並提取乾淨的訊息文字（去除未讀標記、時間戳記、中圓點與狀態）
-    function cleanMessageText(sender, lines) {
-        const rawLines = lines.slice(1);
-        const validLines = [];
-
-        for (let l of rawLines) {
-            // 1. 去除無障礙標籤 "未讀訊息："
-            l = l.replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '').trim();
-            // 2. 去除時間尾綴，例如 " · 1 分鐘"、" • 剛剛"、" · 10 秒"
-            l = l.replace(/\s*[·•・]\s*(\d+\s*(秒|分|分鐘|小時|天|週|年|s|m|h|d|w|y)|剛剛|昨天|前天|上午|下午|\d{1,2}:\d{2}).*$/i, '').trim();
-            // 3. 去除常見已讀/已傳送狀態
-            if (['已傳送', '已送達', '已看過', 'Sent', 'Delivered', 'Seen'].includes(l)) continue;
-            // 4. 忽略純時間戳
-            if (/^(\d{1,2}:\d{2}|\d+\s*(秒|分|小時|天|週|年|s|m|h|d|w|y)|剛剛|昨天|前天)$/i.test(l)) continue;
-            // 5. 如果這行文字跟寄件者姓名完全一樣（例如 "毛"），則跳過取下一行
-            if (l === sender) continue;
-
-            if (l) {
-                validLines.push(l);
-            }
-        }
-
-        return validLines.join(' ').trim() || '您收到了一則新訊息';
-    }
-
     // 從 DOM 對話列表中精確抓取最新一則訊息的寄件者、乾淨內文與頭像
     function extractLatestChatFromDOM() {
         try {
@@ -79,22 +54,56 @@
                 'div[role="row"], div[role="listitem"], a[role="link"][href*="/messages/t/"], a[href*="/messages/t/"]'
             );
             for (const row of rows) {
-                // 提取頭像網址
+                // 1. 提取頭像網址
                 let avatarUrl = '';
-                const img = row.querySelector('img[src*="fbcdn"], img[src*="http"], img');
-                if (img && img.src && !img.src.includes('data:image')) {
+                const img = row.querySelector('img');
+                if (img && img.src && img.src.startsWith('http') && !img.src.includes('data:image')) {
                     avatarUrl = img.src;
                 }
 
-                const text = row.innerText || '';
-                const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
-                if (lines.length >= 2) {
-                    const sender = lines[0];
-                    const body = cleanMessageText(sender, lines);
-                    const ignored = ['Messenger', '搜尋', 'Search', 'Chats', '對話', '收件匣', 'Inbox', '訊息', 'Messages', '隱藏的聊天室'];
-                    if (sender && !ignored.includes(sender) && !sender.startsWith('http')) {
-                        return { sender, body, avatarUrl };
+                // 2. 提取文字元素
+                const textSpans = Array.from(row.querySelectorAll('span[dir="auto"]'))
+                    .map(s => s.innerText.trim())
+                    .filter(Boolean);
+
+                const rawLines = (row.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+
+                let sender = '';
+                let candidateLines = [];
+
+                if (textSpans.length >= 2) {
+                    sender = textSpans[0];
+                    candidateLines = textSpans.slice(1);
+                } else if (rawLines.length >= 2) {
+                    sender = rawLines[0];
+                    candidateLines = rawLines.slice(1);
+                }
+
+                const ignored = ['Messenger', '搜尋', 'Search', 'Chats', '對話', '收件匣', 'Inbox', '訊息', 'Messages', '隱藏的聊天室'];
+                if (sender && !ignored.includes(sender) && !sender.startsWith('http')) {
+                    let body = '';
+                    for (let line of candidateLines) {
+                        // 去除無障礙標籤
+                        line = line.replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '').trim();
+                        // 去除中圓點及後方時間/狀態字串
+                        line = line.replace(/\s*[·•・\-]\s*.*$/, '').trim();
+                        // 去除開頭的「寄件者：」或「你：」
+                        line = line.replace(new RegExp('^(' + sender + '|你|You)[：:]\\s*', 'i'), '').trim();
+                        // 忽略純時間或狀態
+                        if (!line) continue;
+                        if (['已傳送', '已送達', '已看過', 'Sent', 'Delivered', 'Seen'].includes(line)) continue;
+                        if (/^(\d{1,2}:\d{2}|\d+\s*(秒|分|小時|天|週|年|s|m|h|d|w|y)|剛剛|昨天|前天)$/i.test(line)) continue;
+                        if (line === sender) continue;
+
+                        body = line;
+                        break;
                     }
+
+                    return {
+                        sender: sender,
+                        body: body || '您收到了一則新訊息',
+                        avatarUrl: avatarUrl
+                    };
                 }
             }
         } catch (e) {
