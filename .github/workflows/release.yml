@@ -18,6 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           lfs: true
 
       - name: Install Flatpak and Flatpak Builder
@@ -46,9 +47,20 @@ jobs:
           name: Messenger-${{ github.ref_name }}
           path: Messenger-${{ github.ref_name }}.flatpak
 
+      - name: Extract Tag Message
+        id: tag_message
+        run: |
+          TAG_MSG=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
+          {
+            echo 'body<<EOF'
+            echo "$TAG_MSG"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.tag_message.outputs.body }}
           files: Messenger-${{ github.ref_name }}.flatpak
           generate_release_notes: true
         env:
