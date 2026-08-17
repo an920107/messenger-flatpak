@@ -13,7 +13,9 @@
   <developer id="com.squidspirit">
     <name>SquidSpirit</name>
   </developer>
-  <url type="homepage">https://www.facebook.com/messages</url>
+  <url type="homepage">https://github.com/an920107/messenger-flatpak</url>
+  <url type="bugtracker">https://github.com/an920107/messenger-flatpak/issues</url>
+  <url type="vcs-browser">https://github.com/an920107/messenger-flatpak</url>
   <launchable type="desktop-id">com.squidspirit.Messenger.desktop</launchable>
   <provides>
     <binary>messenger</binary>
