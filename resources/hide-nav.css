@@ -1,0 +1,35 @@
+/* ==========================================================================
+   Messenger Custom CSS - Hide Top Navbar & Expand Chat Layout
+   ========================================================================== */
+
+/* 1. 將頂部 Header 高度變數強制歸零 (覆蓋 Dark Mode、Light Mode 與所有子層選擇器) */
+:root,
+html,
+body,
+*,
+*::before,
+*::after,
+.__fb-dark-mode,
+.__fb-light-mode,
+[class*="__fb-"] {
+    --header-height: 0px !important;
+}
+
+/* 2. 徹底隱藏 Facebook 頂部 Navbar 及其佔位 */
+div[role="banner"],
+header[role="banner"],
+[role="banner"] {
+    display: none !important;
+    height: 0px !important;
+    max-height: 0px !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 3. 頂層容器防溢出與底色統一，確保整體滿版無色差 */
+html,
+body,
+div[id^="mount_0_0"] {
+    background-color: #242526 !important;
+    overflow: hidden !important;
+}

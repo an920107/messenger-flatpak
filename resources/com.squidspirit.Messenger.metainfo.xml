@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.squidspirit.Messenger</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Messenger</name>
+  <summary>Native GTK4 and Libadwaita Facebook Messenger client</summary>
+  <description>
+    <p>
+      A fast, lightweight, native GTK4 and Libadwaita desktop client for Facebook Messenger with seamless GNOME 50 desktop integration, persistent session cookies, and background execution.
+    </p>
+  </description>
+  <developer_name>Squidspirit</developer_name>
+  <url type="homepage">https://www.facebook.com/messages</url>
+  <launchable type="desktop-id">com.squidspirit.Messenger.desktop</launchable>
+  <provides>
+    <binary>messenger</binary>
+  </provides>
+  <releases>
+    <release version="1.0.0" date="2026-08-17">
+      <description>
+        <p>Initial release with native GTK4, Libadwaita, WebKit6, and GNOME Background Apps support.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

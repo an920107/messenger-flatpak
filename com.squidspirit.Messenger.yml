@@ -1,0 +1,42 @@
+app-id: com.squidspirit.Messenger
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: messenger
+
+finish-args:
+  # 原生 Wayland、GPU 與 IPC
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # 網路
+  - --share=network
+  # 音訊 (支援 PipeWire 與 PulseAudio)
+  - --socket=pulseaudio
+  # GNOME Background Apps 與通知支援
+  - --talk-name=org.freedesktop.portal.Background
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.portal.Desktop
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  build-args:
+    - --share=network
+  env:
+    CARGO_HOME: /run/build/messenger/cargo-home
+
+modules:
+  - name: messenger
+    buildsystem: simple
+    build-commands:
+      - cargo build --release
+      - install -D target/release/messenger /app/bin/messenger
+      - install -D resources/icon.png /app/share/icons/hicolor/512x512/apps/com.squidspirit.Messenger.png
+      - install -D resources/com.squidspirit.Messenger.desktop /app/share/applications/com.squidspirit.Messenger.desktop
+      - install -D resources/com.squidspirit.Messenger.metainfo.xml /app/share/metainfo/com.squidspirit.Messenger.metainfo.xml
+    sources:
+      - type: dir
+        path: .

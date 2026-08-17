@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Messenger
+Comment=Facebook Messenger
+Exec=messenger %u
+Icon=com.squidspirit.Messenger
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=messenger
+X-Flatpak=com.squidspirit.Messenger
