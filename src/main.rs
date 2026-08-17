@@ -90,6 +90,20 @@ fn build_ui(app: &Application) {
     );
     content_manager.add_script(&script);
 
+    // 註冊 JavaScript -> Rust 的直通 IPC 訊息通道 "notify"
+    content_manager.register_script_message_handler("notify", None);
+
+    let app_notify = app.clone();
+    content_manager.connect_script_message_received(Some("notify"), move |_, value| {
+        let msg = value.to_str();
+        println!(">>> [Direct IPC Notification Received from JS] {}", msg);
+
+        let g_notif = gtk4::gio::Notification::new("Messenger");
+        g_notif.set_body(Some(&msg));
+        g_notif.set_default_action("app.activate");
+        app_notify.send_notification(None, &g_notif);
+    });
+
     // 4. Web View
     let web_view = WebView::builder()
         .user_content_manager(&content_manager)

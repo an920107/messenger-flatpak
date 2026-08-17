@@ -1,11 +1,23 @@
 // ==========================================================================
-// Messenger Preload Script - Background Keep-Alive & Notification Bridge
+// Messenger Preload Script - Background Keep-Alive & Direct IPC Notifications
 // ==========================================================================
 
 (function () {
     'use strict';
 
-    console.log('[Messenger Preload] Initializing background keep-alive and notification hooks...');
+    console.log('[Messenger Preload] Initializing background keep-alive and direct IPC notifications...');
+
+    // 0. 直通 Rust 的原生通知發送器
+    function sendNativeNotification(text) {
+        console.log('[Messenger Preload] Dispatching native notification via WebKit IPC:', text);
+        try {
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.notify) {
+                window.webkit.messageHandlers.notify.postMessage(text);
+            }
+        } catch (err) {
+            console.error('[Preload] PostMessage IPC error:', err);
+        }
+    }
 
     // 1. 偽裝 Visibility API，防止 WebKit 在視窗隱藏或最小化時掛起 WebSocket / MQTT 即時通訊通道
     try {
@@ -22,20 +34,26 @@
         console.error('[Preload] Visibility hook error:', err);
     }
 
-    // 2. 偽裝 Notification.permission 為 granted
+    // 2. 攔截 Web Notification API，將所有通知直接轉發給 Rust
     try {
-        if (window.Notification) {
-            Object.defineProperty(Notification, 'permission', {
-                get: () => 'granted',
-                configurable: true
-            });
-            Notification.requestPermission = async () => 'granted';
-        }
+        const OriginalNotification = window.Notification;
+        window.Notification = function (title, options) {
+            const body = (options && options.body) || title || '您收到了一則新訊息';
+            sendNativeNotification(body);
+            if (OriginalNotification) {
+                try {
+                    return new OriginalNotification(title, options);
+                } catch (e) {}
+            }
+            return {};
+        };
+        window.Notification.permission = 'granted';
+        window.Notification.requestPermission = async () => 'granted';
     } catch (err) {
         console.error('[Preload] Notification hook error:', err);
     }
 
-    // 3. 攔截 document.title 變化（包含 React / SPA 標題更新與輪詢備援）
+    // 3. 攔截 document.title 變化（未讀訊息標題變更雙重保障）
     let lastKnownTitle = document.title;
 
     function handleTitleChange(newTitle) {
@@ -47,16 +65,9 @@
         // 匹配 Facebook Messenger 標題通知格式：
         // 例如 "(1) Messenger"、"(2) 小明 傳送了一則訊息"、"小明 傳送了一則訊息"
         if (/^\(\d+\)/.test(newTitle) || /傳送了一則訊息|sent a message|說：|said:/i.test(newTitle)) {
-            console.log('[Messenger Preload] Unread message detected from title! Triggering notification...');
-            try {
-                const cleanBody = newTitle.replace(/^\(\d+\)\s*/, '');
-                new Notification('Messenger', {
-                    body: cleanBody || '您收到了一則新訊息',
-                    icon: 'com.squidspirit.Messenger'
-                });
-            } catch (e) {
-                console.error('[Preload] Notification trigger error:', e);
-            }
+            console.log('[Messenger Preload] Unread message detected from title! Sending native notification...');
+            const cleanBody = newTitle.replace(/^\(\d+\)\s*/, '');
+            sendNativeNotification(cleanBody || '您收到了一則新訊息');
         }
     }
 
@@ -85,20 +96,10 @@
         handleTitleChange(document.title);
     }, 1000);
 
-    // 4. 攔截 Facebook 提示音效播放（當有新訊息音效時，觸發通知）
-    try {
-        const originalAudioPlay = HTMLAudioElement.prototype.play;
-        HTMLAudioElement.prototype.play = function () {
-            console.log('[Messenger Preload] Audio play intercepted:', this.src);
-            // 只要不是背景持續播放的長音訊（一般通知音效短於 5 秒）
-            if (this.duration && this.duration < 5) {
-                console.log('[Messenger Preload] Short notification sound detected!');
-            }
-            return originalAudioPlay.apply(this, arguments);
-        };
-    } catch (err) {
-        console.error('[Preload] Audio hook error:', err);
-    }
+    // 4. 網頁載入 3 秒後發送一條啟動通知確認通道暢通
+    setTimeout(() => {
+        console.log('[Messenger Preload] Ready.');
+    }, 3000);
 
-    console.log('[Messenger Preload] All hooks registered successfully.');
+    console.log('[Messenger Preload] Direct IPC bridge registered successfully.');
 })();
