@@ -101,7 +101,7 @@ fn build_ui(app: &Application) {
         let mut parts = raw.splitn(3, '\n');
         let sender = parts.next().unwrap_or("Messenger").trim();
         let body = parts.next().unwrap_or("").trim();
-        let avatar_b64 = parts.next().unwrap_or("").trim();
+        let avatar_url = parts.next().unwrap_or("").trim();
 
         let title = if sender.is_empty() { "Messenger" } else { sender };
         println!(">>> [Messenger Native Notification] Sender: {}, Body: {}", title, body);
@@ -110,17 +110,29 @@ fn build_ui(app: &Application) {
         if !body.is_empty() {
             g_notif.set_body(Some(body));
         }
-        g_notif.set_default_action("app.activate");
+        g_notif.set_default_action("app.open-window");
 
-        // 若有寄件者頭像 Base64，存入快取並設置為通知圖示
-        if !avatar_b64.is_empty() {
-            let bytes = glib::base64_decode(avatar_b64);
-            if !bytes.is_empty() {
-                let avatar_file = cache_dir_clone.join("current_avatar.png");
-                if std::fs::write(&avatar_file, bytes).is_ok() {
-                    let g_file = gtk4::gio::File::for_path(&avatar_file);
-                    let icon = gtk4::gio::FileIcon::new(&g_file);
-                    g_notif.set_icon(&icon);
+        // 若有寄件者頭像 URL 或 Base64，存入快取並設置為通知圖示
+        if !avatar_url.is_empty() {
+            if avatar_url.starts_with("http") {
+                let g_file_uri = gtk4::gio::File::for_uri(avatar_url);
+                if let Ok((bytes, _)) = g_file_uri.load_bytes(gtk4::gio::Cancellable::NONE) {
+                    let avatar_file = cache_dir_clone.join("current_avatar.png");
+                    if std::fs::write(&avatar_file, bytes).is_ok() {
+                        let g_file = gtk4::gio::File::for_path(&avatar_file);
+                        let icon = gtk4::gio::FileIcon::new(&g_file);
+                        g_notif.set_icon(&icon);
+                    }
+                }
+            } else {
+                let bytes = glib::base64_decode(avatar_url);
+                if !bytes.is_empty() {
+                    let avatar_file = cache_dir_clone.join("current_avatar.png");
+                    if std::fs::write(&avatar_file, bytes).is_ok() {
+                        let g_file = gtk4::gio::File::for_path(&avatar_file);
+                        let icon = gtk4::gio::FileIcon::new(&g_file);
+                        g_notif.set_icon(&icon);
+                    }
                 }
             }
         }
@@ -178,6 +190,15 @@ fn build_ui(app: &Application) {
         .default_height(780)
         .content(&main_box)
         .build();
+
+    // 註冊 Action: "app.open-window" 供桌面通知點擊喚醒視窗
+    let action = gtk4::gio::SimpleAction::new("open-window", None);
+    let window_clone_action = window.clone();
+    action.connect_activate(move |_, _| {
+        window_clone_action.set_visible(true);
+        window_clone_action.present();
+    });
+    app.add_action(&action);
 
     let window_title_clone = window_title.clone();
     let window_clone = window.clone();

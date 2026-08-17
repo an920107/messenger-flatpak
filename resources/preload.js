@@ -23,7 +23,7 @@
     }, 6000);
 
     let lastSentKey = '';
-    async function sendNativeNotification(sender, body, avatarUrl) {
+    function sendNativeNotification(sender, body, avatarUrl) {
         if (!isReady) return;
 
         const title = (sender || 'Messenger').trim();
@@ -38,27 +38,38 @@
 
         console.log('[Messenger Notification Triggered]', { sender: title, body: content, avatar: avatarUrl });
 
-        let base64Avatar = '';
-        if (avatarUrl) {
-            try {
-                const res = await fetch(avatarUrl);
-                const blob = await res.blob();
-                base64Avatar = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result.split(',')[1] || '');
-                    reader.onerror = () => resolve('');
-                    reader.readAsDataURL(blob);
-                });
-            } catch (e) {}
-        }
-
         try {
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.notify) {
-                window.webkit.messageHandlers.notify.postMessage(`${title}\n${content}\n${base64Avatar}`);
+                window.webkit.messageHandlers.notify.postMessage(`${title}\n${content}\n${avatarUrl || ''}`);
             }
         } catch (e) {
             console.error('[Messenger Preload] IPC Error:', e);
         }
+    }
+
+    // 深度過濾並提取乾淨的訊息文字（去除未讀標記、時間戳記、中圓點與狀態）
+    function cleanMessageText(sender, lines) {
+        const rawLines = lines.slice(1);
+        const validLines = [];
+
+        for (let l of rawLines) {
+            // 1. 去除無障礙標籤 "未讀訊息："
+            l = l.replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '').trim();
+            // 2. 去除時間尾綴，例如 " · 1 分鐘"、" • 剛剛"、" · 10 秒"
+            l = l.replace(/\s*[·•・]\s*(\d+\s*(秒|分|分鐘|小時|天|週|年|s|m|h|d|w|y)|剛剛|昨天|前天|上午|下午|\d{1,2}:\d{2}).*$/i, '').trim();
+            // 3. 去除常見已讀/已傳送狀態
+            if (['已傳送', '已送達', '已看過', 'Sent', 'Delivered', 'Seen'].includes(l)) continue;
+            // 4. 忽略純時間戳
+            if (/^(\d{1,2}:\d{2}|\d+\s*(秒|分|小時|天|週|年|s|m|h|d|w|y)|剛剛|昨天|前天)$/i.test(l)) continue;
+            // 5. 如果這行文字跟寄件者姓名完全一樣（例如 "毛"），則跳過取下一行
+            if (l === sender) continue;
+
+            if (l) {
+                validLines.push(l);
+            }
+        }
+
+        return validLines.join(' ').trim() || '您收到了一則新訊息';
     }
 
     // 從 DOM 對話列表中精確抓取最新一則訊息的寄件者、乾淨內文與頭像
@@ -68,10 +79,10 @@
                 'div[role="row"], div[role="listitem"], a[role="link"][href*="/messages/t/"], a[href*="/messages/t/"]'
             );
             for (const row of rows) {
-                // 提取頭像
+                // 提取頭像網址
                 let avatarUrl = '';
-                const img = row.querySelector('img[src*="fbcdn"], img[src*="http"]');
-                if (img && img.src) {
+                const img = row.querySelector('img[src*="fbcdn"], img[src*="http"], img');
+                if (img && img.src && !img.src.includes('data:image')) {
                     avatarUrl = img.src;
                 }
 
@@ -79,19 +90,7 @@
                 const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
                 if (lines.length >= 2) {
                     const sender = lines[0];
-                    const contentLines = [];
-                    for (let i = 1; i < lines.length; i++) {
-                        const l = lines[i]
-                            .replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '')
-                            .trim();
-                        if (!l) continue;
-                        // 忽略純時間與狀態標記
-                        if (/^(\d{1,2}:\d{2}|\d+\s*(秒|分|小時|天|週|年|s|m|h|d|w|y)|剛剛|昨天|前天)$/i.test(l)) continue;
-                        if (['已傳送', '已送達', '已看過', 'Sent', 'Delivered', 'Seen'].includes(l)) continue;
-                        contentLines.push(l);
-                    }
-
-                    const body = contentLines.join(' ') || '您收到了一則新訊息';
+                    const body = cleanMessageText(sender, lines);
                     const ignored = ['Messenger', '搜尋', 'Search', 'Chats', '對話', '收件匣', 'Inbox', '訊息', 'Messages', '隱藏的聊天室'];
                     if (sender && !ignored.includes(sender) && !sender.startsWith('http')) {
                         return { sender, body, avatarUrl };
