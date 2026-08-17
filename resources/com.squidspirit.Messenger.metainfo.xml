@@ -21,6 +21,11 @@
     <binary>messenger</binary>
   </provides>
   <releases>
+    <release version="1.0.1" date="2026-08-17">
+      <description>
+        <p>Fix session logout issue by enabling persistent SQLite cookie storage and LocalStorage across restarts.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-08-17">
       <description>
         <p>Initial release with native GTK4, Libadwaita, WebKit6, and GNOME Background Apps support.</p>
