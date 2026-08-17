@@ -2,12 +2,20 @@
    Messenger Custom CSS - Hide Top Navbar & Expand Chat Layout
    ========================================================================== */
 
-/* 1. 將頂部 Header 高度變數歸零 */
-:root {
+/* 1. 將頂部 Header 高度變數強制歸零 (覆蓋所有主題與選擇器) */
+:root,
+html,
+body,
+*,
+*::before,
+*::after,
+.__fb-dark-mode,
+.__fb-light-mode,
+[class*="__fb-"] {
     --header-height: 0px !important;
 }
 
-/* 2. 僅隱藏 Messenger 主畫面的頂部 Navbar 及其佔位 */
+/* 2. 徹底隱藏 Facebook 頂部 Navbar 及其佔位 */
 div[role="banner"],
 header[role="banner"] {
     display: none !important;
@@ -16,3 +24,17 @@ header[role="banner"] {
     visibility: hidden !important;
     pointer-events: none !important;
 }
+
+/* 3. 讓 Messenger 主對話畫面與容器向下延伸撐滿 100vh，消除底部殘留空白 */
+div[role="main"],
+div[role="main"] > div,
+div[role="main"] > div > div,
+div[id^="mount_0_0"],
+div[id^="mount_0_0"] > div,
+div[id^="mount_0_0"] > div > div {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+    flex-grow: 1 !important;
+}
+
