@@ -1,42 +1,35 @@
 // ==========================================================================
-// Messenger Preload Script - Background Keep-Alive & Rich Notifications
+// Messenger Preload Script - High-Accuracy DOM & Multi-Message Notification Engine
 // ==========================================================================
 
 (function () {
     'use strict';
 
-    console.log('[Messenger Preload] Initializing rich notification engine with Soup3 avatar & clean body...');
+    console.log('[Messenger Preload] Initializing high-accuracy notification engine...');
 
     let isReady = false;
-    let lastUnreadCount = 0;
+    let lastSeenMessageKey = '';
     let lastKnownTitle = document.title;
 
-    // 啟動緩衝期（6秒）
+    // 啟動緩衝期（6秒），並記錄開啟 App 時現有的最新訊息，避免啟動時對舊訊息彈窗
     setTimeout(() => {
         isReady = true;
-        const match = document.title.match(/^\((\d+)\)/);
-        if (match) {
-            lastUnreadCount = parseInt(match[1], 10);
+        const initialChat = extractLatestChatFromDOM();
+        if (initialChat) {
+            lastSeenMessageKey = `${initialChat.sender}:::${initialChat.body}`;
         }
         lastKnownTitle = document.title;
-        console.log('[Messenger Preload] Ready. Initial unread count:', lastUnreadCount);
+        console.log('[Messenger Preload] Ready. Initial chat key:', lastSeenMessageKey);
     }, 6000);
 
-    let lastSentKey = '';
+    // 直通發送至 Rust 的原生通知函式
     function sendNativeNotification(sender, body, avatarUrl) {
         if (!isReady) return;
 
         const title = (sender || 'Messenger').trim();
         const content = (body || '您收到了一則新訊息').trim();
-        const key = `${title}:::${content}`;
 
-        if (key === lastSentKey) return;
-        lastSentKey = key;
-        setTimeout(() => {
-            if (lastSentKey === key) lastSentKey = '';
-        }, 2500);
-
-        console.log('[Messenger Notification Triggered]', { sender: title, body: content, avatar: avatarUrl });
+        console.log('[Messenger Notification Dispatched]', { sender: title, body: content, avatar: avatarUrl });
 
         try {
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.notify) {
@@ -47,58 +40,65 @@
         }
     }
 
-    // 從 DOM 對話列表中精確抓取最新一則訊息的寄件者、乾淨內文與頭像
+    // 從 Messenger 對話列表中精確抓取最新對話的寄件者、乾淨內文與頭像
     function extractLatestChatFromDOM() {
         try {
+            // 專屬選取 Messenger 真實對話連結（完全排除 Facebook 一般通知或社團提醒）
             const rows = document.querySelectorAll(
-                'div[role="row"], div[role="listitem"], a[role="link"][href*="/messages/t/"], a[href*="/messages/t/"]'
+                'a[role="link"][href*="/messages/t/"], a[role="link"][href*="/messages/e2ee/t/"], a[href*="/messages/t/"], a[href*="/messages/e2ee/t/"]'
             );
+
             for (const row of rows) {
-                // 1. 提取頭像網址
+                // 1. 抓取頭像 URL（支援 svg image xlink:href, href 與 img src）
                 let avatarUrl = '';
-                const img = row.querySelector('img');
-                if (img && img.src && img.src.startsWith('http') && !img.src.includes('data:image')) {
-                    avatarUrl = img.src;
+                const imageEl = row.querySelector('image') || row.querySelector('img');
+                if (imageEl) {
+                    avatarUrl = imageEl.getAttribute('xlink:href') || imageEl.getAttribute('href') || imageEl.src || '';
                 }
 
-                // 2. 提取文字元素
+                // 2. 提取 span[dir="auto"] 文字節點
                 const textSpans = Array.from(row.querySelectorAll('span[dir="auto"]'))
                     .map(s => s.innerText.trim())
                     .filter(Boolean);
 
-                const rawLines = (row.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+                if (textSpans.length === 0) continue;
 
-                let sender = '';
-                let candidateLines = [];
+                // 寄件者通常是第一個 span[dir="auto"]（或 <b> 標籤）
+                const bEl = row.querySelector('b');
+                let sender = (bEl && bEl.innerText) ? bEl.innerText.trim() : textSpans[0];
 
-                if (textSpans.length >= 2) {
-                    sender = textSpans[0];
-                    candidateLines = textSpans.slice(1);
-                } else if (rawLines.length >= 2) {
-                    sender = rawLines[0];
-                    candidateLines = rawLines.slice(1);
+                // 訊息內容通常在第二個 span[dir="auto"]
+                let rawBody = textSpans.length > 1 ? textSpans[1] : '';
+
+                // 備援：若無第二個 span，檢查子文字
+                if (!rawBody) {
+                    const rawLines = (row.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+                    if (rawLines.length > 1) {
+                        rawBody = rawLines[1];
+                    }
+                }
+
+                // 清理訊息內容
+                let body = rawBody;
+                // 去除無障礙標籤
+                body = body.replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '').trim();
+                // 去除時間後綴（如 " · 1 分鐘"、" • 剛剛"）
+                body = body.replace(/\s*[·•・\-]\s*.*$/, '').trim();
+                // 去除外圍引號與句號
+                body = body.replace(/^["'“”„‟’‘\s]+|["'“”„‟’‘\s。]+$/g, '').trim();
+
+                // 如果這則訊息是自己傳送的（以「你:」或「You:」開頭），則不觸發通知
+                if (/^(你|You)[：:]/i.test(body)) {
+                    continue;
+                }
+
+                // 如果開頭包含寄件者姓名（如「小明:」），去除前綴
+                if (sender) {
+                    body = body.replace(new RegExp('^' + sender + '[：:]\\s*', 'i'), '').trim();
                 }
 
                 const ignored = ['Messenger', '搜尋', 'Search', 'Chats', '對話', '收件匣', 'Inbox', '訊息', 'Messages', '隱藏的聊天室'];
                 if (sender && !ignored.includes(sender) && !sender.startsWith('http')) {
-                    let body = '';
-                    for (let line of candidateLines) {
-                        // 去除無障礙標籤
-                        line = line.replace(/^(未讀訊息[：:]*|Unread message[：:]*|Unread[：:]*)/i, '').trim();
-                        // 去除中圓點及後方時間/狀態字串
-                        line = line.replace(/\s*[·•・\-]\s*.*$/, '').trim();
-                        // 去除開頭的「寄件者：」或「你：」
-                        line = line.replace(new RegExp('^(' + sender + '|你|You)[：:]\\s*', 'i'), '').trim();
-                        // 忽略純時間或狀態
-                        if (!line) continue;
-                        if (['已傳送', '已送達', '已看過', 'Sent', 'Delivered', 'Seen'].includes(line)) continue;
-                        if (/^(\d{1,2}:\d{2}|\d+\s*(秒|分|小時|天|週|年|s|m|h|d|w|y)|剛剛|昨天|前天)$/i.test(line)) continue;
-                        if (line === sender) continue;
-
-                        body = line;
-                        break;
-                    }
-
                     return {
                         sender: sender,
                         body: body || '您收到了一則新訊息',
@@ -112,7 +112,21 @@
         return null;
     }
 
-    // 1. 偽裝 Visibility API 保活
+    // 檢查是否有新抵達的訊息（支援同對話連續多次傳送通知）
+    function checkIncomingMessages() {
+        if (!isReady) return;
+
+        const chat = extractLatestChatFromDOM();
+        if (chat) {
+            const currentKey = `${chat.sender}:::${chat.body}`;
+            if (currentKey !== lastSeenMessageKey) {
+                lastSeenMessageKey = currentKey;
+                sendNativeNotification(chat.sender, chat.body, chat.avatarUrl);
+            }
+        }
+    }
+
+    // 1. 偽裝 Visibility API 保活，防止 WebKit 背景斷線
     try {
         Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
         Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
@@ -149,50 +163,16 @@
         console.error('[Preload] ServiceWorker hook error:', err);
     }
 
-    // 4. 監聽 Document Title 與未讀計數變化
+    // 4. 定時（每 600ms）檢查新訊息變化（支援同一對話連續傳訊）
+    setInterval(checkIncomingMessages, 600);
+
+    // 5. 攔截 document.title 變化時立即檢查
     function handleTitleChange(newTitle) {
         if (!newTitle || newTitle === lastKnownTitle) return;
         lastKnownTitle = newTitle;
-
-        if (!isReady) return;
-
-        console.log('[Messenger Preload] Title changed to:', newTitle);
-
-        // 格式 A：標題包含寄件者與動作，例如 "小明 傳送了一則訊息"
-        if (/傳送了一則訊息|sent a message|說：|said:/i.test(newTitle)) {
-            const cleanTitle = newTitle.replace(/^\(\d+\)\s*/, '');
-            const colonIndex = cleanTitle.indexOf('：') !== -1 ? cleanTitle.indexOf('：') : cleanTitle.indexOf(':');
-            if (colonIndex !== -1) {
-                const sender = cleanTitle.substring(0, colonIndex);
-                const body = cleanTitle.substring(colonIndex + 1);
-                sendNativeNotification(sender, body, '');
-                return;
-            }
-            sendNativeNotification('Messenger', cleanTitle, '');
-            return;
-        }
-
-        // 格式 B：未讀計數增加（例如 (4) 變 (5)）
-        const match = newTitle.match(/^\((\d+)\)/);
-        if (match) {
-            const currentUnread = parseInt(match[1], 10);
-            if (currentUnread > lastUnreadCount) {
-                lastUnreadCount = currentUnread;
-                const domData = extractLatestChatFromDOM();
-                if (domData) {
-                    sendNativeNotification(domData.sender, domData.body, domData.avatarUrl);
-                } else {
-                    sendNativeNotification('Messenger', '您收到了一則新訊息', '');
-                }
-            } else {
-                lastUnreadCount = currentUnread;
-            }
-        } else {
-            lastUnreadCount = 0;
-        }
+        checkIncomingMessages();
     }
 
-    // 攔截 document.title Setter
     try {
         const titleDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'title') ||
                                 Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'title');
@@ -212,7 +192,5 @@
         console.error('[Preload] Title setter hook error:', err);
     }
 
-    setInterval(() => {
-        handleTitleChange(document.title);
-    }, 1000);
+    console.log('[Messenger Preload] All high-accuracy hooks registered.');
 })();
