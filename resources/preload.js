@@ -89,18 +89,6 @@
             // 去除外圍引號與句號
             body = body.replace(/^["'“”„‟’‘\s]+|["'“”„‟’‘\s。]+$/g, '').trim();
 
-            // 如果頂部最新訊息是自己發送的（以「你:」、「你傳送了」、「You:」開頭），更新 key 並立即終止，不觸發通知亦不向後尋找舊訊息
-            const isSentByMe = /^(你|You)[：:\s]|^(你|You)(傳送了|分享了|收回了|回應了|表示|sent|shared|reacted|replied)/i.test(body);
-            if (isSentByMe) {
-                lastSeenMessageKey = `${sender}:::${body}`;
-                return null;
-            }
-
-            // 如果開頭包含寄件者姓名（如「小明:」），去除前綴
-            if (sender) {
-                body = body.replace(new RegExp('^' + sender + '[：:]\\s*', 'i'), '').trim();
-            }
-
             const ignored = ['Messenger', '搜尋', 'Search', 'Chats', '對話', '收件匣', 'Inbox', '訊息', 'Messages', '隱藏的聊天室'];
             if (sender && !ignored.includes(sender) && !sender.startsWith('http')) {
                 return {
@@ -120,12 +108,19 @@
         if (!isReady) return;
 
         const chat = extractLatestChatFromDOM();
-        if (chat) {
-            const currentKey = `${chat.sender}:::${chat.body}`;
-            if (currentKey !== lastSeenMessageKey) {
-                lastSeenMessageKey = currentKey;
-                sendNativeNotification(chat.sender, chat.body, chat.avatarUrl);
-            }
+        if (!chat) return;
+
+        const currentKey = `${chat.sender}:::${chat.body}`;
+
+        // 若使用者正聚焦在視窗內操作/打字/閱讀，同步更新記憶但不發送桌面通知
+        if (typeof document.hasFocus === 'function' && document.hasFocus()) {
+            lastSeenMessageKey = currentKey;
+            return;
+        }
+
+        if (currentKey !== lastSeenMessageKey) {
+            lastSeenMessageKey = currentKey;
+            sendNativeNotification(chat.sender, chat.body, chat.avatarUrl);
         }
     }
 

@@ -94,41 +94,6 @@ fn build_ui(app: &Application) {
     // 註冊 JavaScript -> Rust 的直通 IPC 訊息通道 "notify"
     content_manager.register_script_message_handler("notify", None);
 
-    let app_notify = app.clone();
-    let http_session = soup::Session::new();
-    content_manager.connect_script_message_received(Some("notify"), move |_, value| {
-        let raw = value.to_str();
-        let mut parts = raw.splitn(3, '\n');
-        let sender = parts.next().unwrap_or("Messenger").trim();
-        let body = parts.next().unwrap_or("").trim();
-        let avatar_url = parts.next().unwrap_or("").trim();
-
-        let title = if sender.is_empty() { "Messenger" } else { sender };
-        println!(">>> [Messenger Native Notification] Sender: {}, Body: {}, Avatar URL: {}", title, body, avatar_url);
-
-        let g_notif = gtk4::gio::Notification::new(title);
-        if !body.is_empty() {
-            g_notif.set_body(Some(body));
-        }
-        g_notif.set_default_action("app.open-window");
-
-        // 若有寄件者頭像 URL，透過 Soup3 下載並封裝為 BytesIcon 傳入 D-Bus 通知
-        if !avatar_url.is_empty() && avatar_url.starts_with("http") {
-            if let Ok(msg) = soup::Message::new("GET", avatar_url) {
-                if let Ok(bytes) = http_session.send_and_read(&msg, gtk4::gio::Cancellable::NONE) {
-                    println!(">>> [Avatar Downloaded] Successfully fetched {} bytes", bytes.len());
-                    let g_bytes = glib::Bytes::from_owned(bytes);
-                    let icon = gtk4::gio::BytesIcon::new(&g_bytes);
-                    g_notif.set_icon(&icon);
-                } else {
-                    println!(">>> [Avatar Download] Failed to fetch avatar bytes from {}", avatar_url);
-                }
-            }
-        }
-
-        app_notify.send_notification(None, &g_notif);
-    });
-
     // 4. Web View
     let web_view = WebView::builder()
         .user_content_manager(&content_manager)
@@ -179,6 +144,49 @@ fn build_ui(app: &Application) {
         .default_height(780)
         .content(&main_box)
         .build();
+
+    // 處理前端 JavaScript 傳來的最新訊息通知 (僅在視窗未聚焦或背景運行時發送桌面通知)
+    let app_notify = app.clone();
+    let http_session = soup::Session::new();
+    let window_for_notify = window.clone();
+    content_manager.connect_script_message_received(Some("notify"), move |_, value| {
+        // 若使用者正聚焦在視窗內（視窗可見且具有焦點），表示正看著畫面打字或閱讀，不發送通知
+        if window_for_notify.is_visible() && window_for_notify.is_active() {
+            println!(">>> [Messenger Notification] Window is active and focused, suppressing notification.");
+            return;
+        }
+
+        let raw = value.to_str();
+        let mut parts = raw.splitn(3, '\n');
+        let sender = parts.next().unwrap_or("Messenger").trim();
+        let body = parts.next().unwrap_or("").trim();
+        let avatar_url = parts.next().unwrap_or("").trim();
+
+        let title = if sender.is_empty() { "Messenger" } else { sender };
+        println!(">>> [Messenger Native Notification] Sender: {}, Body: {}, Avatar URL: {}", title, body, avatar_url);
+
+        let g_notif = gtk4::gio::Notification::new(title);
+        if !body.is_empty() {
+            g_notif.set_body(Some(body));
+        }
+        g_notif.set_default_action("app.open-window");
+
+        // 若有寄件者頭像 URL，透過 Soup3 下載並封裝為 BytesIcon 傳入 D-Bus 通知
+        if !avatar_url.is_empty() && avatar_url.starts_with("http") {
+            if let Ok(msg) = soup::Message::new("GET", avatar_url) {
+                if let Ok(bytes) = http_session.send_and_read(&msg, gtk4::gio::Cancellable::NONE) {
+                    println!(">>> [Avatar Downloaded] Successfully fetched {} bytes", bytes.len());
+                    let g_bytes = glib::Bytes::from_owned(bytes);
+                    let icon = gtk4::gio::BytesIcon::new(&g_bytes);
+                    g_notif.set_icon(&icon);
+                } else {
+                    println!(">>> [Avatar Download] Failed to fetch avatar bytes from {}", avatar_url);
+                }
+            }
+        }
+
+        app_notify.send_notification(None, &g_notif);
+    });
 
     // 註冊 Action: "app.open-window" 供桌面通知點擊喚醒視窗
     let action = gtk4::gio::SimpleAction::new("open-window", None);
