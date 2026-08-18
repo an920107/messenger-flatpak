@@ -21,6 +21,11 @@
     <binary>messenger</binary>
   </provides>
   <releases>
+    <release version="1.1.3" date="2026-08-18">
+      <description>
+        <p>Implement focus-aware notification suppression using native window and document focus state, completely eliminating fragile language-specific string matching for drafts and outgoing messages.</p>
+      </description>
+    </release>
     <release version="1.1.2" date="2026-08-18">
       <description>
         <p>Fix reCAPTCHA and security verification dialog rendering by isolating custom styles strictly to the top frame, and extend the main chat layout to 100vh to eliminate bottom blank margins.</p>
