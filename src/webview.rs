@@ -17,9 +17,9 @@ pub struct WebViewComponents {
 }
 
 pub fn create_web_view() -> WebViewComponents {
-    // 1. 設定持久化儲存目錄 (Flatpak 內部 ~/.var/app/com.squidspirit.Messenger/...)
-    let data_dir = glib::user_data_dir().join("com.squidspirit.Messenger");
-    let cache_dir = glib::user_cache_dir().join("com.squidspirit.Messenger");
+    // 1. 設定持久化儲存目錄 (Flatpak 內部 ~/.var/app/com.squidspirit.Messenger/data/messenger)
+    let data_dir = glib::user_data_dir().join("messenger");
+    let cache_dir = glib::user_cache_dir().join("messenger");
 
     let _ = std::fs::create_dir_all(&data_dir);
     let _ = std::fs::create_dir_all(&cache_dir);
