@@ -1,214 +1,34 @@
+mod config;
+mod notifications;
+mod preferences;
+mod webview;
+mod window;
+
 use gtk4::glib;
-use gtk4::prelude::*;
-use libadwaita::{Application, ApplicationWindow, HeaderBar, WindowTitle};
-use webkit6::prelude::*;
-use webkit6::{
-    CookieAcceptPolicy, CookiePersistentStorage, NetworkSession, PermissionRequest, Settings,
-    UserContentInjectedFrames, UserContentManager, UserScript, UserScriptInjectionTime,
-    UserStyleLevel, UserStyleSheet, WebView,
-};
+use libadwaita as adw;
+use adw::prelude::*;
+use crate::config::ConfigManager;
 
 const APP_ID: &str = "com.squidspirit.Messenger";
-const TARGET_URL: &str = "https://www.facebook.com/messages";
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
-const HIDE_NAV_CSS: &str = include_str!("../resources/hide-nav.css");
-const PRELOAD_JS: &str = include_str!("../resources/preload.js");
 
 fn main() -> glib::ExitCode {
-    let app = Application::builder()
+    adw::init().expect("Failed to initialize Libadwaita");
+
+    let app = adw::Application::builder()
         .application_id(APP_ID)
         .build();
 
-    app.connect_activate(build_ui);
+    let config_manager = ConfigManager::new();
+
+    app.connect_activate(move |app| {
+        if let Some(w) = app.windows().first() {
+            w.set_visible(true);
+            w.present();
+            return;
+        }
+        window::build_ui(app, &config_manager);
+    });
+
     app.run()
 }
 
-fn build_ui(app: &Application) {
-    if let Some(window) = app.windows().first() {
-        window.set_visible(true);
-        window.present();
-        return;
-    }
-
-    // 1. 設定持久化資料與快取目錄 (XDG Data & Cache)
-    let data_dir = glib::user_data_dir().join("messenger");
-    let cache_dir = glib::user_cache_dir().join("messenger");
-
-    let _ = std::fs::create_dir_all(&data_dir);
-    let _ = std::fs::create_dir_all(&cache_dir);
-
-    let data_dir_str = data_dir.to_str().unwrap();
-    let cache_dir_str = cache_dir.to_str().unwrap();
-
-    // 建立持久化網路會話 (包含 LocalStorage, IndexedDB, Cookies, HSTS, 磁碟快取等)
-    let network_session = NetworkSession::new(Some(data_dir_str), Some(cache_dir_str));
-
-    // 關鍵設定 1：關閉 ITP (Intelligent Tracking Prevention)，防止 Facebook 認證 Cookie 被當成第三方追蹤清除
-    network_session.set_itp_enabled(false);
-
-    // 關鍵設定 2：啟用持久化憑證儲存 (Persistent Credential Storage)
-    network_session.set_persistent_credential_storage_enabled(true);
-
-    // 關鍵設定 3：設定 SQLite 檔案路徑與允許跨域認證 Cookie
-    if let Some(cookie_manager) = network_session.cookie_manager() {
-        let cookie_file = data_dir.join("cookies.sqlite");
-        cookie_manager.set_accept_policy(CookieAcceptPolicy::Always);
-        cookie_manager.set_persistent_storage(
-            cookie_file.to_str().unwrap(),
-            CookiePersistentStorage::Sqlite,
-        );
-    }
-
-    // 2. WebKit Settings
-    let settings = Settings::builder()
-        .enable_html5_local_storage(true)
-        .enable_html5_database(true)
-        .enable_javascript(true)
-        .enable_webaudio(true)
-        .enable_media_stream(true)
-        .enable_developer_extras(true)
-        .enable_write_console_messages_to_stdout(true)
-        .user_agent(USER_AGENT)
-        .build();
-
-    // 3. WebKit User Content Manager - 注入 CSS 與 JavaScript 保活腳本 (僅注入頂層框架，絕不干擾 reCAPTCHA 等 iframe)
-    let content_manager = UserContentManager::new();
-    let stylesheet = UserStyleSheet::new(
-        HIDE_NAV_CSS,
-        UserContentInjectedFrames::TopFrame,
-        UserStyleLevel::User,
-        &[],
-        &[],
-    );
-    content_manager.add_style_sheet(&stylesheet);
-
-    let script = UserScript::new(
-        PRELOAD_JS,
-        UserContentInjectedFrames::TopFrame,
-        UserScriptInjectionTime::Start,
-        &[],
-        &[],
-    );
-    content_manager.add_script(&script);
-
-    // 註冊 JavaScript -> Rust 的直通 IPC 訊息通道 "notify"
-    content_manager.register_script_message_handler("notify", None);
-
-    // 4. Web View
-    let web_view = WebView::builder()
-        .user_content_manager(&content_manager)
-        .network_session(&network_session)
-        .settings(&settings)
-        .hexpand(true)
-        .vexpand(true)
-        .build();
-
-    web_view.load_uri(TARGET_URL);
-
-    // 自動允許桌面通知與多媒體音訊權限
-    web_view.connect_permission_request(|_, req: &PermissionRequest| {
-        req.allow();
-        true
-    });
-
-    // 攔截 WebKit 通知事件，使用 Libadwaita / GIO 原生桌面通知 Portal 發送通知
-    let app_clone = app.clone();
-    web_view.connect_show_notification(move |_, notif| {
-        let title = notif.title().unwrap_or_else(|| glib::GString::from("Messenger"));
-        let body = notif.body().unwrap_or_else(|| glib::GString::from("您收到了一則新訊息"));
-        println!(">>> [Messenger Notification Event] Title: {}, Body: {}", title, body);
-
-        let g_notif = gtk4::gio::Notification::new(&title);
-        g_notif.set_body(Some(&body));
-        g_notif.set_default_action("app.activate");
-        let notif_id = format!("msg-{}", notif.id());
-        app_clone.send_notification(Some(&notif_id), &g_notif);
-        true
-    });
-
-    // 5. Libadwaita 原生 HeaderBar (GTK4 / Libadwaita 樣式)
-    let header_bar = HeaderBar::new();
-    let window_title = WindowTitle::new("Messenger", "");
-    header_bar.set_title_widget(Some(&window_title));
-
-    // 6. 垂直佈局容器
-    let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    main_box.append(&header_bar);
-    main_box.append(&web_view);
-
-    // 7. Libadwaita 原生視窗
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Messenger")
-        .default_width(1100)
-        .default_height(780)
-        .content(&main_box)
-        .build();
-
-    // 處理前端 JavaScript 傳來的最新訊息通知 (僅在視窗未聚焦或背景運行時發送桌面通知)
-    let app_notify = app.clone();
-    let http_session = soup::Session::new();
-    let window_for_notify = window.clone();
-    content_manager.connect_script_message_received(Some("notify"), move |_, value| {
-        // 若使用者正聚焦在視窗內（視窗可見且具有焦點），表示正看著畫面打字或閱讀，不發送通知
-        if window_for_notify.is_visible() && window_for_notify.is_active() {
-            println!(">>> [Messenger Notification] Window is active and focused, suppressing notification.");
-            return;
-        }
-
-        let raw = value.to_str();
-        let mut parts = raw.splitn(3, '\n');
-        let sender = parts.next().unwrap_or("Messenger").trim();
-        let body = parts.next().unwrap_or("").trim();
-        let avatar_url = parts.next().unwrap_or("").trim();
-
-        let title = if sender.is_empty() { "Messenger" } else { sender };
-        println!(">>> [Messenger Native Notification] Sender: {}, Body: {}, Avatar URL: {}", title, body, avatar_url);
-
-        let g_notif = gtk4::gio::Notification::new(title);
-        if !body.is_empty() {
-            g_notif.set_body(Some(body));
-        }
-        g_notif.set_default_action("app.open-window");
-
-        // 若有寄件者頭像 URL，透過 Soup3 下載並封裝為 BytesIcon 傳入 D-Bus 通知
-        if !avatar_url.is_empty() && avatar_url.starts_with("http") {
-            if let Ok(msg) = soup::Message::new("GET", avatar_url) {
-                if let Ok(bytes) = http_session.send_and_read(&msg, gtk4::gio::Cancellable::NONE) {
-                    println!(">>> [Avatar Downloaded] Successfully fetched {} bytes", bytes.len());
-                    let g_bytes = glib::Bytes::from_owned(bytes);
-                    let icon = gtk4::gio::BytesIcon::new(&g_bytes);
-                    g_notif.set_icon(&icon);
-                } else {
-                    println!(">>> [Avatar Download] Failed to fetch avatar bytes from {}", avatar_url);
-                }
-            }
-        }
-
-        app_notify.send_notification(None, &g_notif);
-    });
-
-    // 註冊 Action: "app.open-window" 供桌面通知點擊喚醒視窗
-    let action = gtk4::gio::SimpleAction::new("open-window", None);
-    let window_clone_action = window.clone();
-    action.connect_activate(move |_, _| {
-        window_clone_action.set_visible(true);
-        window_clone_action.present();
-    });
-    app.add_action(&action);
-
-    let window_title_clone = window_title.clone();
-    let window_clone = window.clone();
-    web_view.connect_title_notify(move |_| {
-        window_title_clone.set_title("Messenger");
-        window_clone.set_title(Some("Messenger"));
-    });
-
-    // 8. 點擊 x 關閉按鈕時，隱藏視窗並在 GNOME 50 Background Apps 背景常駐
-    window.connect_close_request(|w| {
-        w.set_visible(false);
-        glib::Propagation::Stop
-    });
-
-    window.present();
-}
