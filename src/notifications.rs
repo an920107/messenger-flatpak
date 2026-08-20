@@ -68,7 +68,7 @@ pub fn setup_notifications(
     let app_clone = app.clone();
     web_view.connect_show_notification(move |_, notif| {
         let title = notif.title().unwrap_or_else(|| glib::GString::from("Messenger"));
-        let body = notif.body().unwrap_or_else(|| glib::GString::from("您收到了一則新訊息"));
+        let body = notif.body().unwrap_or_else(|| glib::GString::from("You received a new message"));
         println!(">>> [Messenger Notification Event] Title: {}, Body: {}", title, body);
 
         let g_notif = gtk4::gio::Notification::new(&title);

@@ -6,24 +6,24 @@ pub fn show_preferences_window(parent: &adw::ApplicationWindow, config: &ConfigM
     let prefs_window = adw::PreferencesWindow::builder()
         .transient_for(parent)
         .modal(true)
-        .title("偏好設定")
+        .title("Preferences")
         .default_width(560)
         .default_height(400)
         .build();
 
     let page = adw::PreferencesPage::builder()
-        .title("一般")
+        .title("General")
         .icon_name("preferences-other-symbolic")
         .build();
 
     let group = adw::PreferencesGroup::builder()
-        .title("背景與生命週期")
-        .description("設定應用程式視窗關閉時的常駐行為")
+        .title("Behavior")
+        .description("Configure application behavior when the window is closed.")
         .build();
 
     let action_row = adw::ActionRow::builder()
-        .title("關閉視窗時保留在背景運行")
-        .subtitle("在背景常駐以持續接收即時訊息與桌面通知")
+        .title("Run in Background When Closed")
+        .subtitle("Keep the app running in the background to receive real-time notifications.")
         .activatable(true)
         .build();
 

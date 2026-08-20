@@ -23,13 +23,13 @@ pub fn build_ui(app: &adw::Application, config: &ConfigManager) {
 
     // 3. 右上角主選單按鈕 (MenuButton + open-menu-symbolic)
     let menu = gio::Menu::new();
-    menu.append(Some("偏好設定"), Some("win.preferences"));
-    menu.append(Some("完全結束"), Some("app.quit"));
+    menu.append(Some("Preferences"), Some("win.preferences"));
+    menu.append(Some("Quit Messenger"), Some("app.quit"));
 
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu)
-        .tooltip_text("選單")
+        .tooltip_text("Main Menu")
         .build();
     header_bar.pack_end(&menu_button);
 
